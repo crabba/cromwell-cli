@@ -1,0 +1,18 @@
+{
+  "Parliament2.alignmentFile":  "s3://gatk-test-data/wgs_bam/NA12878_24RG_hg38/NA12878_24RG_small.hg38.bam",
+  "Parliament2.alignmentIndex": "s3://gatk-test-data/wgs_bam/NA12878_24RG_hg38/NA12878_24RG_small.hg38.bai",
+
+  "Parliament2.refFasta": "s3://broad-references/hg38/v0/Homo_sapiens_assembly38.fasta",
+  "Parliament2.refIndex": "s3://broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai",
+  "Parliament2.filterContigs": "false",
+  "Parliament2.runLumpy": "true",
+  "Parliament2.runManta": "true",
+  "Parliament2.runBreakdancer": "false",
+  "Parliament2.runBreakseq": "false",
+  "Parliament2.runCNVnator": "false",
+  "Parliament2.runDelly": "false",
+  "Parliament2.genotypeVCFs": "false",
+  "Parliament2.runSURVIVOR": "false",
+  "Parliament2.runJasmine": "false",
+  "Parliament2.visualizeSVs": "false"
+}

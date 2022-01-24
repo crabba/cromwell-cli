@@ -42,22 +42,25 @@ def bai_from_bam(bam):
 def has_bai_object(bam, objects):
     '''Return True if given bam object has corresponding bai object'''
     bai_key = bai_from_bam(bam)
+    for o in objects:
+        print(f"o: {o.key}")
     bai_objects = [elem for elem in objects if elem.key == bai_key]
     ret = len(bai_objects) == 1
     logging.debug(f"Test for {bai_key} returning {ret}")
     return ret
 
-def bam_objects_in(bucket, prefix):
+def bam_objects_matching(bucket, prefix):
     bucket_r = s3_r.Bucket(bucket)
     bucket_objects = bucket_r.objects.filter(Prefix = prefix)
     count_obj = sum(1 for _ in bucket_objects.all())
     bam_objects = [elem for elem in bucket_objects if elem.key.endswith('.bam')]
     bam_objects_with_index = [elem for elem in bam_objects if has_bai_object(elem, bucket_objects)]
+    logging.info(f"bam_objects: {bam_objects}")
     logging.info(f"{len(bam_objects_with_index)} BAM objects with BAI index in {bucket}")
     return(bam_objects_with_index)
 
-def create_inputs_file(bam_object):
-    '''Return contents of a parliament2.inputs.json file from mustache template, with bam file name'''
+def create_input_contents(bam_object, template):
+    '''Return contents of a given template file, edited with bam and bai file names'''
     logging.debug(f"bam_object: {bam_object}")
     bam_path = f"{bam_object.bucket_name}/{bam_object.key}"
     bai_path = re.sub(r'.bam$', '.bai', bam_path)
@@ -65,15 +68,15 @@ def create_inputs_file(bam_object):
         'bam_s3': f"s3://{bam_path}",
         'bai_s3': f"s3://{bai_path}"
     }
-    with open(INPUTS_FILE_MUSTACHE, 'r') as f:
+    with open(template, 'r') as f:
         out = chevron.render(f, args)
     return(out)
 
-def do_run(host, source, inputs):
+def do_run(host, source, input_contents):
     '''Submit POST request to host
     host: Cromwell server
     source: Name of file for workflowSource
-    inputs: Contents of file for workflowInputs
+    input_contents: Contents of file for workflowInputs.  Empty string to omit this parameter.
     '''
     logging.info(f"run({source}) on {host}")
     
@@ -81,14 +84,15 @@ def do_run(host, source, inputs):
     (url, headers) = make_url(host)
     files = {
         'workflowSource': open(source, 'rb'),
-        'workflowInputs': inputs
     }
+    if len(input_contents):
+        files.update({'workflowInputs': input_contents})
     response = requests.post(url, headers=headers, files=files, verify=False)
     print_response(response)
 
 @click.group()
 @click.option('-v', '--verbose', count = True , help = "Verbosity (cumulative)")
-@click.option('-p', '--profile', default = 'default', help = 'AWS CLI Profile')
+@click.option('-p', '--profile', default = 'default', help = "AWS CLI Profile (Default: 'default')")
 def main(verbose, profile):
     if verbose > 0:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -99,7 +103,6 @@ def main(verbose, profile):
     logging.warning(f"Log level {level_name}")
     boto3.setup_default_session(profile_name=profile)
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    # Example client
     global s3_r
     s3_r = boto3.resource('s3')
 
@@ -108,15 +111,16 @@ def main(verbose, profile):
 @click.option('--source', required = True, help = 'WDL input file')
 @click.option('--bucket', required = True, help = 'Bucket of BAM files to process')
 @click.option('--prefix', required = True, help = 'Prefix of objects within bucket')
-def run_bucket(host, source, bucket, prefix):
+@click.option('--template', required = True, help = 'Mustache-format template for inputs file')
+def run_bucket(host, source, bucket, prefix, template):
     '''Call run() on each BAM file in the given bucket'''
-    bam_objects = bam_objects_in(bucket, prefix)
+    bam_objects = bam_objects_matching(bucket, prefix)
     if len(bam_objects) > MAX_FILES:
         logging.error(f"Number of objects in {bucket}/{prefix} ({len(bam_objects)}) exceeds limit of {MAX_FILES}")
         sys.exit(1)
     for bam_object in bam_objects:
-        inputs_file = create_inputs_file(bam_object)
-        do_run(host, source, inputs_file)
+        input_contents = create_input_contents(bam_object, template)
+        do_run(host, source, input_contents)
 
 # curl --insecure -X POST "https://ec2-52-203-201-171.compute-1.amazonaws.com/api/workflows/v1" \
 #     -H  "accept: application/json" \
@@ -133,8 +137,10 @@ def run(host, source, inputs):
     # TODO: Some workflows (eg: hello world) don't use inputs
     # Accommodate this with if inputs is not None:, send empty string, test for this in do_run()
     
-    with open(inputs, 'r') as fp:
-        input_contents = fp.read()
+    input_contents = ''
+    if inputs is not None:
+        with open(inputs, 'r') as fp:
+            input_contents = fp.read()
     do_run(host, source, input_contents)
 
 @main.command()
